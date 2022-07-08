@@ -1,0 +1,17 @@
+{:paths   ["src" "resources"]
+ :deps    {com.github.seancorfield/next.jdbc {:mvn/version "1.2.780"}
+           hiccup/hiccup                     {:mvn/version "2.0.0-alpha2"}
+           io.pedestal/pedestal.jetty        {:mvn/version "0.5.10"}
+           io.pedestal/pedestal.service      {:mvn/version "0.5.10"}
+           org.clojure/clojure               {:mvn/version "1.11.1"}
+           org.clojure/core.async            {:mvn/version "1.5.648"}
+           org.postgresql/postgresql         {:mvn/version "42.4.0"}
+           org.slf4j/slf4j-simple            {:mvn/version "2.0.0-alpha7"}}
+ :aliases {:dev {:extra-paths ["dev" "test"]
+                 :jvm-opts    ["-XX:-OmitStackTraceInFastThrow"
+                               "-Dclojure.core.async.go-checking=true"
+                               "-Dclojure.main.report=stderr"]
+                 :extra-deps  {com.h2database/h2             {:mvn/version "2.1.212"},
+                               io.github.clojure/tools.build {:git/url "https://github.com/clojure/tools.build.git",
+                                                              :sha     "0d20256c40b5a6b6adbcbdf7d0c52cf9e22e994d"},
+                               org.clojure/test.check        {:mvn/version "1.1.1"}}}}}
