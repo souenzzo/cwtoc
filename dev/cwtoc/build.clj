@@ -7,11 +7,13 @@
 
 (defn -main
   [& _]
-  (let [basis (b/create-basis {:project "deps.edn"})]
+  (let [version (System/getProperty "cwtoc.version"
+                  "develop")
+        basis (b/create-basis {:project "deps.edn"})]
     (b/delete {:path "target"})
     (b/write-pom {:class-dir class-dir
                   :lib       lib
-                  :version   "1.0.0"
+                  :version   version
                   :basis     basis})
     #_(b/copy-dir {:src-dirs   (:paths basis)
                    :target-dir class-dir})

@@ -14,7 +14,8 @@
             [ring.util.mime-type :as mime])
   (:import (java.net URI)
            (java.sql Timestamp)
-           (java.time Clock Instant)))
+           (java.time Clock Instant)
+           (java.util Properties)))
 
 (set! *warn-on-reflection* true)
 
@@ -63,14 +64,22 @@
 (defn profile
   [{:keys [session]
     :as   request}]
-  (profile-by-id (assoc request
-                   :path-params {:id (str (:cara/id session))})))
+  (let [id (:cara/id session)]
+    (when-not id
+      (throw (ex-info (str "Only authed users are allowed to access profile page.")
+               {:cognitect.anomalies/category :cognitect.anomalies/forbidden})))
+    (profile-by-id (assoc request
+                     :path-params {:id (str id)}))))
 
 (defn login
-  [{:keys [session]
+  [{:keys [session query-params]
     :as   request}]
-  (let [email (:cara/email session)]
+  (let [email (:cara/email session)
+        {:keys [err-msg]} query-params]
     {:content [:div
+               (when err-msg
+                 [:aside
+                  [:p err-msg]])
                (form request
                  {:action (route/url-for ::login!)
                   :method "POST"}
@@ -161,17 +170,20 @@
 (defn vender-voto
   [{::keys [cwtoc-conn]
     :keys  [session]}]
-  (let []
+  (let [id (:cara/id session)]
+    (when-not id
+      (throw (ex-info "Only authed users are allowed to vender votos page."
+               {:cognitect.anomalies/category :cognitect.anomalies/forbidden})))
     (jdbc/with-transaction [conn cwtoc-conn]
       (let [{:cara/keys [respeito reputacao]}
             (first (jdbc/execute! conn
                      ["SELECT * FROM cara WHERE cara.id = ?"
-                      (:cara/id session)]))]
+                      id]))]
         (jdbc/execute! conn
           ["UPDATE cara SET respeito = ?, reputacao = ? WHERE cara.id = ?"
            (inc (or respeito 0))
            (dec (or reputacao 0))
-           (:cara/id session)])))
+           id])))
     {:headers {"Location" (route/url-for ::camara)}
      :status  303}))
 
@@ -292,6 +304,17 @@
                                            (assoc ctx :request
                                              (merge service-map request)))})]
                           (concat
+                            [(interceptor/interceptor {:nane  ::ex
+                                                       :error (fn [ctx ex]
+                                                                (let [cause (ex-cause ex)
+                                                                      {:cognitect.anomalies/keys [category]} (ex-data cause)]
+                                                                  (cond
+                                                                    (contains? #{:cognitect.anomalies/forbidden}
+                                                                      category) (assoc ctx :response
+                                                                                  {:headers {"Location" (route/url-for ::login
+                                                                                                          :params {:err-msg (ex-message cause)})}
+                                                                                   :status  303})
+                                                                    :else (throw cause))))})]
                             (butlast interceptors)
                             [(interceptor/interceptor
                                {:name  ::render
@@ -391,12 +414,20 @@
 (defn -main
   [& _args]
   ;; docker run --name my-postgres --env=POSTGRES_PASSWORD=postgres --rm -p 5432:5432 postgres:alpine
-  (let [service-map {::http/port  (Long/getLong "cwtoc.server.http-port"
+  (let [pom (some-> "META-INF/maven/cwtoc/server/pom.properties"
+              io/resource
+              io/input-stream)
+        version (get (when pom (doto (Properties.)
+                                 (.load pom)))
+                  "version"
+                  "develop")
+        service-map {::http/port  (Long/getLong "cwtoc.server.http-port"
                                     8080)
                      ::http/type  :jetty
                      ::http/host  "0.0.0.0"
                      ::http/join? false}]
-    (log/info :service-map service-map)
+    (log/info :version version
+      :service-map service-map)
     (swap! *http
       (fn [st]
         (some-> st http/stop)
