@@ -126,7 +126,11 @@
 (defn partido!
   [{::keys [cwtoc-conn clock]
     :keys  [session form-params]}]
-  (let [now (Timestamp/from (Instant/now clock))]
+  (let [now (Timestamp/from (Instant/now clock))
+        cara-id (:cara/id session)]
+    (when-not cara-id
+      (throw (ex-info "Você não pode criar um partido sem fazer login."
+               {:cognitect.anomalies/category :cognitect.anomalies/forbidden})))
     (jdbc/with-transaction [conn cwtoc-conn]
       (jdbc/execute! conn
         ["INSERT INTO partido (nome, dataCriacao) VALUES (?, ?)"
@@ -137,7 +141,7 @@
          (-> (jdbc/execute! conn ["SELECT partido.id FROM partido WHERE nome = ?" (:nome form-params)])
            first
            :partido/id)
-         (:cara/id session)
+         cara-id
          now]))
     {:headers {"Location" (route/url-for ::partidos)}
      :status  303}))
@@ -148,6 +152,7 @@
 
 (defn partidos
   [{::keys [cwtoc-conn]
+    :keys  [session]
     :as    request}]
   (let [partidos (jdbc/execute! cwtoc-conn
                    ["SELECT * FROM partido"])]
@@ -158,14 +163,15 @@
                   [:li [:a {:href (route/url-for ::partido-by-id
                                     :params {:id id})}
                         nome]])]
-               (form request
-                 {:action (route/url-for ::partido!)
-                  :method "POST"}
-                 [:label
-                  "nome"
-                  [:input {:name "nome"}]]
-                 [:button {:type "submit"}
-                  "fundar partido"])]}))
+               (when (:cara/id session)
+                 (form request
+                   {:action (route/url-for ::partido!)
+                    :method "POST"}
+                   [:label
+                    "nome"
+                    [:input {:name "nome"}]]
+                   [:button {:type "submit"}
+                    "fundar partido"]))]}))
 
 (defn vender-voto
   [{::keys [cwtoc-conn]
@@ -216,7 +222,8 @@
                   [:li [:a {:href (route/url-for ::profile-by-id
                                     :params {:id id})}
                         email]])]
-               (if (contains? ids (:cara/id session))
+               (cond
+                 (contains? ids (:cara/id session))
                  (form request
                    {:action (route/url-for
                               ::desfiliar
@@ -227,6 +234,7 @@
                             :value  id}]
                    [:button {:type "submit"}
                     "desfiliar"])
+                 (:cara/id session)
                  (form request
                    {:action (route/url-for
                               ::filiar
@@ -366,10 +374,13 @@
 (defn jdbc-url
   [database-url]
   (let [uri (URI/create database-url)
-        [user password] (string/split (.getUserInfo uri) #":" 2)
-        query (str "user=" user "&password=" password
-                (some->> (.getQuery uri)
-                  (str "&")))]
+        user+password (some-> (.getUserInfo uri)
+                        (string/split #":" 2))
+        query (->> (some-> (.getQuery uri) vector)
+                (concat (map (fn [[k v]] (str k "=" v))
+                          (zipmap ["user" "password"]
+                            user+password)))
+                (string/join "&"))]
     (str (URI. "jdbc"
            (str (URI. "postgresql" nil
                   (.getHost uri) (.getPort uri) (.getPath uri)

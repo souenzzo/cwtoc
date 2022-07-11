@@ -12,8 +12,8 @@ FROM openjdk:18-jdk-alpine
 RUN adduser -D cwtoc
 USER cwtoc
 WORKDIR /home/cwtoc
-COPY --from=clojure --chown=cwtoc /home/cwtoc/target/cwtoc.jar ./
 CMD java \
   -Dcwtoc.server.http-port="$PORT" \
   -Dcwtoc.server.cwtoc-db-url="$DATABASE_URL" \
-  -jar cwtoc.jar
+  -jar /usr/share/cwtoc/cwtoc.jar
+COPY --from=clojure /home/cwtoc/target/cwtoc.jar /usr/share/cwtoc/cwtoc.jar
